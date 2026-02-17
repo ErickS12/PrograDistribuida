@@ -1,0 +1,144 @@
+================================================================
+GUÍA DE SOBREVIVENCIA GIT - PROYECTO UNIVERSIDAD
+================================================================
+
+INTEGRANTES Y RAMAS:
+- Erick      -> Rama: erick
+- Israel     -> Rama: israel
+- Mauricio   -> Rama: mauricio
+- Desiderio  -> Rama: desiderio
+- Cristian   -> Rama: cristian
+
+================================================================
+REGLA DE ORO (LEER ANTES DE EMPEZAR)
+================================================================
+⛔ PROHIBIDO HACER: git push origin main
+⛔ PROHIBIDO TRABAJAR DIRECTAMENTE EN: main
+
+Todo el trabajo se hace en TU PROPIA RAMA.
+El 'main' solo lo toca el encargado de unir los cambios.
+================================================================
+
+----------------------------------------------------------------
+PASO 1: PRIMERA VEZ (CONFIGURACIÓN)
+----------------------------------------------------------------
+Solo necesitas hacer esto una vez al principio:
+
+1. Descargar el proyecto:
+   git clone [LINK_DEL_REPO]
+
+2. Entrar a la carpeta:
+
+3. Crear y entrar a tu rama personal:
+   git switch -c [TU_NOMBRE]
+
+   /* NOTA: La bandera "-c" significa "Create". 
+      Esto crea la rama y te mete en ella automáticamente. */
+
+----------------------------------------------------------------
+PASO 2: RUTINA DIARIA (CADA VEZ QUE PROGRAMES)
+----------------------------------------------------------------
+Antes de escribir una sola línea de código, actualízate:
+
+1. Asegúrate de estar en tu rama:
+   git switch [TU_NOMBRE]
+
+2. Trae lo nuevo que hayan hecho los demás:
+   git pull origin main
+
+3. ¡Ahora sí, programa, crea archivos y trabaja normal!
+
+----------------------------------------------------------------
+PASO 3: GUARDAR Y SUBIR CAMBIOS (TU TRABAJO)
+----------------------------------------------------------------
+Cuando termines tu avance del día:
+
+1. Prepara los archivos:
+   git add .
+
+2. Guarda la versión en tu compu:
+   git commit -m "Escribe aquí qué hiciste (ej. Agregué el Login)"
+
+3. Sube tu rama a la nube:
+   git push origin [TU_NOMBRE]
+
+----------------------------------------------------------------
+PASO 4: INTEGRAR AL PROYECTO (PULL REQUEST)
+----------------------------------------------------------------
+Cuando tu parte ya funcione y quieras unirla al proyecto final:
+
+1. Ve a la página del repositorio en GitHub.
+2. Verás un aviso amarillo: "[tu_rama] had recent pushes".
+3. Dale clic al botón "Compare & pull request".
+4. Escribe un título y descripción de lo que lograste.
+5. Dale clic al botón verde "Create pull request".
+6. AVISAR al encargado para que revise.
+
+----------------------------------------------------------------
+PASO 5: EL MERGE (SOLO PARA EL ENCARGADO)
+----------------------------------------------------------------
+Instrucciones para quien administra el repositorio:
+
+1. Ve a la pestaña "Pull requests" en GitHub.
+2. Revisa que no haya conflictos (letras verdes).
+3. Clic en "Merge pull request".
+4. Clic en "Confirm merge".
+
+¡LISTO! El código ahora es parte del main.
+
+----------------------------------------------------------------
+PASO 6: DESPUÉS DE UN MERGE (TODOS)
+----------------------------------------------------------------
+¡OJO! Cuando alguien una su código al main, todos los demás
+se quedan "atrasados". Para actualizarse deben ejecutar:
+
+git checkout [TU_NOMBRE]
+git pull origin main
+
+----------------------------------------------------------------
+VERIFICAR RAMAS (¿DÓNDE ESTOY PARADO?)
+----------------------------------------------------------------
+Es muy fácil perderse. Usa estos comandos para ubicarte:
+
+1. Ver ramas en tu computadora (Locales):
+   git branch
+   
+   /* - Lista solo las ramas que has creado o bajado a tu PC.
+   - El asterisco (*) te señala en cuál rama estás trabajando ahora.
+   */
+
+2. Ver TODAS las ramas (Locales + Nube):
+   git branch -a
+   
+   /* - La "-a" significa "All" (Todas).
+   - Te muestra tus ramas y también las que están en GitHub (remotas).
+   - Útil para ver si ya existe la rama de un compañero en la nube.
+   */
+
+TIP PRO: Si con 'git branch -a' no ves una rama que tu compañero
+jura que ya subió, escribe primero:
+git fetch
+(Esto actualiza la lista de ramas disponibles sin descargar archivos).
+
+
+================================================================
+GLOSARIO RÁPIDO: ¿QUÉ ESTOY HACIENDO?
+================================================================
+
+1. ¿Qué es el MAIN?
+   Es el "Libro Final" que se entrega al profesor. Nadie escribe
+   directamente aquí para no mancharlo.
+
+2. ¿Qué son las RAMAS (Branches)?
+   Son "cuadernos borradores". Cada uno tiene el suyo. Si te
+   equivocas aquí, no rompes el proyecto de los demás.
+
+3. ¿Qué es un PULL REQUEST (PR)?
+   Es pedir permiso. "Oye, ya terminé mi capítulo en mi borrador,
+   ¿puedes copiarlo al Libro Final?".
+   Sirve para revisar errores antes de juntar todo.
+
+
+
+
+
