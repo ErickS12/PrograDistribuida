@@ -59,7 +59,7 @@ buscador.on('message', async (msg, rinfo) => {
 });
 
 buscador.bind(() => {
-    buscador.addMembership('231.0.0.1', miIp); // Escuchar respuestas por VPN
-    buscador.setMulticastInterface(miIp);      // Gritar por VPN
-    buscador.send(Buffer.from("BUSCANDO"), 10000, '231.0.0.1');
+    buscador.setBroadcast(true); // <--- Permiso para gritar a todos
+    // Gritamos a la IP universal de Broadcast en lugar del grupo Multicast
+    buscador.send(Buffer.from("BUSCANDO"), 10000, '255.255.255.255');
 });

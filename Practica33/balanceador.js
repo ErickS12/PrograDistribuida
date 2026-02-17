@@ -63,16 +63,16 @@ const gestorLogica = {
 skeletonify('Gestor', gestorLogica).listen(9000, () => {
     console.log(`[BALANCEADOR] Servidor RPC activo (IP: ${miIp})`);
 });
-
-// RADAR MULTICAST FORZADO A LA VPN
+// RADAR BROADCAST PARA VPN
 const radar = dgram.createSocket('udp4');
 radar.on('message', (msg, rinfo) => {
     if (msg.toString() === "BUSCANDO") {
         const respuesta = Buffer.from("AQUI_ESTOY");
+        // Le responde directamente a quien gritó
         radar.send(respuesta, rinfo.port, rinfo.address);
     }
 });
 radar.bind(10000, () => {
-    radar.addMembership('231.0.0.1', miIp); // <--- OBLIGAMOS A ESCUCHAR EN RADMIN
-    console.log(`[MULTICAST] Radar esperando nodos en túnel VPN: ${miIp}`);
+    radar.setBroadcast(true); // <--- Activamos Broadcast
+    console.log(`[BROADCAST] Radar esperando nodos en túnel VPN: ${miIp}`);
 });

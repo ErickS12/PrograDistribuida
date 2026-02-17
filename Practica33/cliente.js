@@ -89,8 +89,9 @@ buscador.on('message', (msg, rinfo) => {
     }
 });
 
+
 buscador.bind(() => {
-    buscador.addMembership('231.0.0.1', miIp);
-    buscador.setMulticastInterface(miIp);
-    buscador.send(Buffer.from("BUSCANDO"), 10000, '231.0.0.1');
+    buscador.setBroadcast(true); // <--- Permiso para gritar a todos
+    // Gritamos a la IP universal de Broadcast
+    buscador.send(Buffer.from("BUSCANDO"), 10000, '255.255.255.255');
 });
