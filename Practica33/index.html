@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Distribuido - Cliente Web</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #ddd682;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #e1e19b;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 400px;
+        }
+        h1 { color: #333; }
+        input[type="text"] {
+            width: 80%;
+            padding: 10px;
+            margin: 20px 0;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 18px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover { background-color: #0056b3; }
+        #resultado {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        .estado-info { background-color: #e7f3ff; color: #0056b3; }
+        .estado-exito { background-color: #d4edda; color: #155724; }
+        .estado-error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Crear Archivo</h1>
+        <p>El sistema decidirá automáticamente dónde guardarlo.</p>
+        <input type="text" id="nombreArchivo" placeholder="Ej: mi_documento.txt" autocomplete="off">
+        <br>
+        <button onclick="crearArchivo()">Crear</button>
+
+        <div id="resultado" style="display: none;"></div>
+    </div>
+
+    <script>
+        async function crearArchivo() {
+            const inputNombre = document.getElementById('nombreArchivo');
+            const divResultado = document.getElementById('resultado');
+            const nombre = inputNombre.value.trim();
+
+            if (!nombre) {
+                mostrarMensaje("Por favor escribe un nombre.", "error");
+                return;
+            }
+
+            mostrarMensaje("Procesando solicitud...", "info");
+
+            try {
+                // Pedimos a nuestro servidor local que haga el trabajo
+                const respuesta = await fetch('/api/crear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nombreArchivo: nombre })
+                });
+                const datos = await respuesta.json();
+                
+                mostrarMensaje(datos.mensaje, datos.tipo);
+                if(datos.tipo === 'exito') inputNombre.value = ''; // Limpiar campo si salió bien
+
+            } catch (error) {
+                mostrarMensaje("Error de comunicación con el cliente local.", "error");
+            }
+        }
+
+        function mostrarMensaje(texto, tipo) {
+            const div = document.getElementById('resultado');
+            div.style.display = 'block';
+            div.className = 'estado-' + tipo;
+            div.textContent = texto;
+        }
+    </script>
+</body>
+</html>
