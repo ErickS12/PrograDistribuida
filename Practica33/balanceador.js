@@ -2,7 +2,7 @@ const skeletonify = require('./skeletonify');
 const stubify = require('./stubify');
 const dgram = require('dgram');
 const os = require('os');
-
+//Puerto dinamico
 const PUERTO_RPC = process.argv[2] ? parseInt(process.argv[2]) : 9000;
 
 // Escáner inteligente: Busca prioritariamente la IP de Radmin VPN

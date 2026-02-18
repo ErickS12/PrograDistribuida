@@ -4,7 +4,7 @@ const path = require('path');
 const dgram = require('dgram');
 const os = require('os');
 const stubify = require('./stubify');
-
+//Puerto dinamico
 const PUERTO_WEB = process.argv[2] ? parseInt(process.argv[2]) : 3000; 
 let ipBalanceador = null;
 let balanceadorRPC = null;
