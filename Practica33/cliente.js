@@ -5,7 +5,7 @@ const dgram = require('dgram');
 const os = require('os');
 const stubify = require('./stubify');
 
-const PUERTO_WEB = 3000; 
+const PUERTO_WEB = process.argv[2] ? parseInt(process.argv[2]) : 3000; 
 let ipBalanceador = null;
 let balanceadorRPC = null;
 

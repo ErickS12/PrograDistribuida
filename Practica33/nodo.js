@@ -4,7 +4,8 @@ const dgram = require('dgram');
 const fs = require('fs');
 const os = require('os');
 
-const PUERTO = 8081; 
+//Puertos dinamicos
+const PUERTO = process.argv[2] ? parseInt(process.argv[2]) : 8081; 
 
 function getIP() {
     const interfaces = os.networkInterfaces();

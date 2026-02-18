@@ -3,6 +3,8 @@ const stubify = require('./stubify');
 const dgram = require('dgram');
 const os = require('os');
 
+const PUERTO_RPC = process.argv[2] ? parseInt(process.argv[2]) : 9000;
+
 // Escáner inteligente: Busca prioritariamente la IP de Radmin VPN
 function getIP() {
     const interfaces = os.networkInterfaces();
@@ -60,7 +62,7 @@ const gestorLogica = {
     }
 };
 
-skeletonify('Gestor', gestorLogica).listen(9000, () => {
+skeletonify('Gestor', gestorLogica).listen(PUERTO_RPC, () => {
     console.log(`[BALANCEADOR] Servidor RPC activo (IP: ${miIp})`);
 });
 // RADAR BROADCAST PARA VPN
