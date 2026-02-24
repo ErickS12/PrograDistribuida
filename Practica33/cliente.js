@@ -4,10 +4,10 @@ const path = require('path');
 const dgram = require('dgram');
 const os = require('os');
 const stubify = require('./stubify');
-//Puerto dinamico
-const PUERTO_WEB = process.argv[2] ? parseInt(process.argv[2]) : 3000; 
-let ipBalanceador = null;
-let balanceadorRPC = null;
+
+const PUERTO_WEB = 3000;
+let nodosDisponibles = []; // Lista de nodos descubiertos
+let indiceNodo = 0; // Para round-robin simple
 
 function getIP() {
     const interfaces = os.networkInterfaces();
@@ -47,7 +47,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function procesarCreacionArchivo(nombre) {
-    if (!ipBalanceador) return { tipo: 'error', mensaje: "Aún buscando Balanceador en la red..." };
+    if (nodosDisponibles.length === 0) return { tipo: 'error', mensaje: "Aún buscando nodos en la red..." };
 
     const dirLocal = './archivos_cliente';
     if (!fs.existsSync(dirLocal)) fs.mkdirSync(dirLocal);
@@ -59,39 +59,51 @@ async function procesarCreacionArchivo(nombre) {
         fs.writeFileSync(rutaCompleta, "Contenido web");
         return { tipo: 'exito', mensaje: "Archivo creado localmente con éxito." };
     } else {
-        console.log(`[WEB] Límite local lleno. Enviando '${nombre}' a la red...`);
+        console.log(`[WEB] Límite local lleno. Enviando '${nombre}' a la red P2P...`);
+        // Seleccionar nodo round-robin
+        const urlDestino = nodosDisponibles[indiceNodo % nodosDisponibles.length];
+        indiceNodo++;
+
         try {
-            const res = await balanceadorRPC.recibirYDistribuirArchivo(nombre);
-            if (res === 1) return { tipo: 'exito', mensaje: "Límite local lleno. Archivo guardado en la RED distribuida." };
+            const nodoRemoto = stubify(urlDestino, 'Nodo', ['guardarEnDisco']);
+            const res = await nodoRemoto.guardarEnDisco(nombre);
+            if (res === 1) return { tipo: 'exito', mensaje: "Límite local lleno. Archivo guardado en la RED P2P." };
             if (res === 2) return { tipo: 'info', mensaje: "El archivo ya existe en la RED." };
-            if (res === 3) return { tipo: 'error', mensaje: "ERROR: Capacidad máxima de la red alcanzada." };
+            if (res === 3) return { tipo: 'error', mensaje: "ERROR: Nodo lleno. Intenta de nuevo." };
             return { tipo: 'error', mensaje: "Error desconocido en la red." };
-        } catch (e) { return { tipo: 'error', mensaje: "Fallo al conectar con el Balanceador." }; }
+        } catch (e) {
+            console.log(`Nodo ${urlDestino} no disponible. Intentando otro...`);
+            // Remover nodo fallido y reintentar
+            nodosDisponibles = nodosDisponibles.filter(n => n !== urlDestino);
+            return await procesarCreacionArchivo(nombre); // Reintentar
+        }
     }
 }
 
-console.log(`[CLIENTE WEB] Iniciando en VPN ${miIp}... Buscando Balanceador.`);
+console.log(`[CLIENTE WEB] Iniciando en VPN ${miIp}... Buscando nodos.`);
 const buscador = dgram.createSocket('udp4');
 
 buscador.on('message', (msg, rinfo) => {
-    if (msg.toString() === "AQUI_ESTOY") {
-        ipBalanceador = rinfo.address;
-        console.log(`[CLIENTE WEB] ¡Balanceador encontrado en ${ipBalanceador}!`);
-        balanceadorRPC = stubify(`http://${ipBalanceador}:9000`, 'Gestor', ['recibirYDistribuirArchivo']);
-        buscador.close();
-
-        server.listen(PUERTO_WEB, () => {
-            console.log(`\n==================================================`);
-            console.log(`   ✅ INTERFAZ WEB LISTA`);
-            console.log(`   👉 Abre en tu navegador: http://localhost:${PUERTO_WEB}`);
-            console.log(`==================================================\n`);
-        });
+    if (msg.toString() === "NODO_DISPONIBLE") {
+        const urlNodo = `http://${rinfo.address}:8081`; // Asumiendo puerto fijo para nodos
+        if (!nodosDisponibles.includes(urlNodo)) {
+            nodosDisponibles.push(urlNodo);
+            console.log(`[CLIENTE WEB] Nodo descubierto: ${urlNodo}`);
+        }
     }
 });
 
-
 buscador.bind(() => {
-    buscador.setBroadcast(true); // <--- Permiso para gritar a todos
-    // Gritamos a la IP universal de Broadcast
-    buscador.send(Buffer.from("BUSCANDO"), 10000, '255.255.255.255');
+    buscador.setBroadcast(true);
+    // Enviar broadcast para descubrir nodos
+    setInterval(() => {
+        buscador.send(Buffer.from("BUSCANDO_NODOS"), 10000, '255.255.255.255');
+    }, 5000); // Cada 5 segundos
+
+    server.listen(PUERTO_WEB, () => {
+        console.log(`\n==================================================`);
+        console.log(`   ✅ INTERFAZ WEB LISTA`);
+        console.log(`   👉 Abre en tu navegador: http://localhost:${PUERTO_WEB}`);
+        console.log(`==================================================\n`);
+    });
 });

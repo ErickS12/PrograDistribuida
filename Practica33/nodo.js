@@ -43,24 +43,20 @@ const nodoLogica = {
 
 skeletonify('Nodo', nodoLogica).listen(PUERTO, () => {
     console.log(`[NODO] Iniciado en ${miUrl}`);
-    console.log(`[NODO] Buscando al Balanceador por la VPN...`);
+    console.log(`[NODO] Esperando solicitudes de clientes en la red P2P...`);
 });
 
-// MULTICAST DE BÚSQUEDA FORZADO A LA VPN
-const buscador = dgram.createSocket('udp4');
-buscador.on('message', async (msg, rinfo) => {
-    if (msg.toString() === "AQUI_ESTOY") {
-        console.log(`[NODO] ¡Balanceador encontrado en ${rinfo.address}!`);
-        buscador.close();
-        
-        const balanceadorRemoto = stubify(`http://${rinfo.address}:9000`, 'Gestor', ['registrarNodo']);
-        await balanceadorRemoto.registrarNodo(miUrl);
-        console.log("[NODO] ¡Registrado con éxito y listo para recibir archivos!");
+// Broadcast para responder a clientes buscando nodos
+const anunciador = dgram.createSocket('udp4');
+anunciador.on('message', (msg, rinfo) => {
+    if (msg.toString() === "BUSCANDO_NODOS") {
+        const respuesta = Buffer.from("NODO_DISPONIBLE");
+        anunciador.send(respuesta, rinfo.port, rinfo.address);
+        console.log(`[NODO] Respondiendo a cliente en ${rinfo.address}`);
     }
 });
 
-buscador.bind(() => {
-    buscador.setBroadcast(true); // <--- Permiso para gritar a todos
-    // Gritamos a la IP universal de Broadcast en lugar del grupo Multicast
-    buscador.send(Buffer.from("BUSCANDO"), 10000, '255.255.255.255');
+anunciador.bind(10000, () => {
+    anunciador.setBroadcast(true);
+    console.log(`[NODO] Anunciador activo en puerto 10000`);
 });
