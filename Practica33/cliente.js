@@ -6,9 +6,13 @@ const os = require('os');
 const stubify = require('./stubify');
 
 const PUERTO_WEB = 3000;
-let nodosDisponibles = []; // Lista de nodos descubiertos
-let indiceNodo = 0; // Para round-robin simple
+const PUERTO_P2P = 10000;
+let nodosDisponibles = []; 
+let indiceNodo = 0; 
 
+// ==========================
+// OBTENER IP (RADMIN / WIFI)
+// ==========================
 function getIP() {
     const interfaces = os.networkInterfaces();
     let ipRadmin = null, ipWifi = null;
@@ -25,14 +29,20 @@ function getIP() {
 
 const miIp = getIP();
 
+// ==========================
+// SERVIDOR HTTP
+// ==========================
 const server = http.createServer(async (req, res) => {
-    if (req.method === 'GET' && req.url === '/') {
+    const urlParsed = new URL(req.url, `http://${req.headers.host}`);
+
+    if (req.method === 'GET' && urlParsed.pathname === '/') {
         fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
             if (err) { res.writeHead(500); res.end('Error al cargar index.html'); return; }
             res.writeHead(200, { 'Content-Type': 'text/html' });
             res.end(data);
         });
-    } else if (req.method === 'POST' && req.url === '/api/crear') {
+    } 
+    else if (req.method === 'POST' && urlParsed.pathname === '/api/crear') {
         let body = '';
         req.on('data', chunk => { body += chunk.toString(); });
         req.on('end', async () => {
@@ -41,51 +51,87 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(resultado));
         });
-    } else {
+    } 
+    else if (req.method === 'GET' && urlParsed.pathname === '/api/recuperar') {
+        const nombre = urlParsed.searchParams.get('nombre');
+        const resultado = await procesarRecuperacionArchivo(nombre);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(resultado));
+    }
+    else {
         res.writeHead(404); res.end('No encontrado');
     }
 });
 
+// --- INICIAR SERVIDOR WEB DE INMEDIATO ---
+server.listen(PUERTO_WEB, () => {
+    console.log(`\n==================================================`);
+    console.log(` ✅ INTERFAZ WEB LISTA: http://localhost:${PUERTO_WEB}`);
+    console.log(`==================================================\n`);
+});
+
+// ==========================
+// LÓGICA DE ARCHIVOS
+// ==========================
+async function procesarRecuperacionArchivo(nombre) {
+    const dirLocal = './archivos_cliente';
+    const rutaLocal = path.join(dirLocal, nombre);
+    
+    if (fs.existsSync(rutaLocal)) {
+        return { tipo: 'exito', contenido: fs.readFileSync(rutaLocal, 'utf8'), origen: 'Local (Cliente)' };
+    }
+
+    if (nodosDisponibles.length === 0) return { tipo: 'error', mensaje: "No hay nodos en la red." };
+
+    for (const url of nodosDisponibles) {
+        try {
+            const nodoRemoto = stubify(url, 'Nodo', ['leerArchivo']);
+            const contenido = await nodoRemoto.leerArchivo(nombre);
+            if (contenido && !contenido.startsWith("Error 404")) {
+                return { tipo: 'exito', contenido: contenido, origen: `Remoto (${url})` };
+            }
+        } catch (e) { console.log(`[WEB] Fallo en ${url}`); }
+    }
+    return { tipo: 'error', mensaje: "Archivo no encontrado en la red." };
+}
+
 async function procesarCreacionArchivo(nombre) {
-    if (nodosDisponibles.length === 0) return { tipo: 'error', mensaje: "Aún buscando nodos en la red..." };
+    if (nodosDisponibles.length === 0) return { tipo: 'error', mensaje: "Buscando nodos..." };
 
     const dirLocal = './archivos_cliente';
     if (!fs.existsSync(dirLocal)) fs.mkdirSync(dirLocal);
-    const archivosLocales = fs.readdirSync(dirLocal);
     const rutaCompleta = `${dirLocal}/${nombre}`;
 
-    if (archivosLocales.length < 3) {
-        if (fs.existsSync(rutaCompleta)) return { tipo: 'info', mensaje: "El archivo ya existe localmente." };
-        fs.writeFileSync(rutaCompleta, "Contenido web");
-        return { tipo: 'exito', mensaje: "Archivo creado localmente con éxito." };
+    if (fs.readdirSync(dirLocal).length < 3) {
+        if (fs.existsSync(rutaCompleta)) return { tipo: 'info', mensaje: "Ya existe localmente." };
+        fs.writeFileSync(rutaCompleta, "Contenido web original");
+        return { tipo: 'exito', mensaje: "Creado localmente." };
     } else {
-        console.log(`[WEB] Límite local lleno. Enviando '${nombre}' a la red P2P...`);
-        // Seleccionar nodo round-robin
         const urlDestino = nodosDisponibles[indiceNodo % nodosDisponibles.length];
         indiceNodo++;
-
         try {
             const nodoRemoto = stubify(urlDestino, 'Nodo', ['guardarEnDisco']);
             const res = await nodoRemoto.guardarEnDisco(nombre);
-            if (res === 1) return { tipo: 'exito', mensaje: "Límite local lleno. Archivo guardado en la RED P2P." };
-            if (res === 2) return { tipo: 'info', mensaje: "El archivo ya existe en la RED." };
-            if (res === 3) return { tipo: 'error', mensaje: "ERROR: Nodo lleno. Intenta de nuevo." };
-            return { tipo: 'error', mensaje: "Error desconocido en la red." };
+            if (res === 1) return { tipo: 'exito', mensaje: "Replicado en RED P2P." };
+            return { tipo: 'error', mensaje: "Error en nodo." };
         } catch (e) {
-            console.log(`Nodo ${urlDestino} no disponible. Intentando otro...`);
-            // Remover nodo fallido y reintentar
             nodosDisponibles = nodosDisponibles.filter(n => n !== urlDestino);
-            return await procesarCreacionArchivo(nombre); // Reintentar
+            return await procesarCreacionArchivo(nombre); 
         }
     }
 }
 
-console.log(`[CLIENTE WEB] Iniciando en VPN ${miIp}... Buscando nodos.`);
-const buscador = dgram.createSocket('udp4');
+// ==========================
+// DESCUBRIMIENTO P2P
+// ==========================
+const buscador = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 
 buscador.on('message', (msg, rinfo) => {
-    if (msg.toString() === "NODO_DISPONIBLE") {
-        const urlNodo = `http://${rinfo.address}:8081`; // Asumiendo puerto fijo para nodos
+    const mensaje = msg.toString();
+    if (mensaje.startsWith("NODO_VIVO") || mensaje.startsWith("NODO_DISPONIBLE")) {
+        const puertoNodo = mensaje.split(":")[1] || "8081";
+        const urlNodo = `http://${rinfo.address}:${puertoNodo}`;
+        
         if (!nodosDisponibles.includes(urlNodo)) {
             nodosDisponibles.push(urlNodo);
             console.log(`[CLIENTE WEB] Nodo descubierto: ${urlNodo}`);
@@ -93,17 +139,16 @@ buscador.on('message', (msg, rinfo) => {
     }
 });
 
-buscador.bind(() => {
-    buscador.setBroadcast(true);
-    // Enviar broadcast para descubrir nodos
-    setInterval(() => {
-        buscador.send(Buffer.from("BUSCANDO_NODOS"), 10000, '255.255.255.255');
-    }, 5000); // Cada 5 segundos
+// Manejo de error para que no se detenga el servidor si el puerto 10000 falla
+buscador.on('error', (err) => {
+    console.log(`[ERROR P2P] Puerto 10000 ocupado o error de red: ${err.message}`);
+});
 
-    server.listen(PUERTO_WEB, () => {
-        console.log(`\n==================================================`);
-        console.log(`   ✅ INTERFAZ WEB LISTA`);
-        console.log(`   👉 Abre en tu navegador: http://localhost:${PUERTO_WEB}`);
-        console.log(`==================================================\n`);
-    });
+buscador.bind(PUERTO_P2P, () => {
+    buscador.setBroadcast(true);
+    console.log(`[P2P] Buscando nodos activamente...`);
+    
+    setInterval(() => {
+        buscador.send(Buffer.from("BUSCANDO_NODOS"), PUERTO_P2P, '255.255.255.255');
+    }, 5000);
 });
