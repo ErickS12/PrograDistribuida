@@ -25,13 +25,14 @@
         h1 { color: #333; margin-bottom: 10px; font-size: 24px; }
         hr { border: 0; height: 1px; background: #ccc; margin: 20px 0; }
         
-        input[type="text"] {
+        input[type="text"], input[type="file"] {
             width: 85%;
             padding: 10px;
             margin: 10px 0;
             border: 2px solid #ddd;
             border-radius: 6px;
             font-size: 16px;
+            background-color: white;
         }
         
         .btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
@@ -44,6 +45,7 @@
             cursor: pointer;
             transition: opacity 0.3s;
             color: white;
+            font-weight: bold;
         }
         
         .btn-crear { background-color: #007bff; }
@@ -78,60 +80,95 @@
         <h1>Gestión de Archivos</h1>
         <p style="font-size: 14px; color: #555;">El sistema replica y busca automáticamente en la red.</p>
         
-        <input type="text" id="nombreArchivo" placeholder="Nombre del archivo (ej: datos.txt)" autocomplete="off">
+        <hr>
+        <strong>Subir Archivo a la Red:</strong>
+        <input type="file" id="archivoInput">
+        <button class="btn-crear" onclick="ejecutarAccion('crear')">Subir Archivo</button>
         
-        <div class="btn-group">
-            <button class="btn-crear" onclick="ejecutarAccion('crear')">Crear</button>
-            <button class="btn-recuperar" onclick="ejecutarAccion('recuperar')">Recuperar</button>
-        </div>
+        <hr>
+        <strong>Buscar Archivo en la Red:</strong>
+        <input type="text" id="nombreArchivo" placeholder="Nombre exacto (ej: reporte.pdf)" autocomplete="off">
+        <button class="btn-recuperar" onclick="ejecutarAccion('recuperar')">Buscar y Descargar</button>
 
         <div id="resultado" style="display: none;"></div>
         
         <div id="visor">
-            <strong style="color: #333;">Contenido recuperado:</strong>
-            <pre id="contenidoTexto" style="white-space: pre-wrap; margin-top: 10px; color: #444;"></pre>
-            <small id="metaInfo" style="display: block; margin-top: 10px; color: #888; border-top: 1px solid #eee; padding-top: 5px;"></small>
+            <small id="metaInfo" style="display: block; color: #888; font-weight: bold;"></small>
         </div>
     </div>
 
     <script>
         async function ejecutarAccion(tipo) {
-            const inputNombre = document.getElementById('nombreArchivo');
-            const nombre = inputNombre.value.trim();
             const divVisor = document.getElementById('visor');
-
-            if (!nombre) {
-                mostrarMensaje("Escribe un nombre de archivo.", "error");
-                return;
-            }
-
             divVisor.style.display = 'none';
-            mostrarMensaje(`Procesando ${tipo}...`, "info");
 
             try {
                 if (tipo === 'crear') {
-                    const res = await fetch('/api/crear', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ nombreArchivo: nombre })
-                    });
-                    const datos = await res.json();
-                    mostrarMensaje(datos.mensaje, datos.tipo);
+                    const archivoInput = document.getElementById('archivoInput');
+                    if (archivoInput.files.length === 0) {
+                        mostrarMensaje("Por favor, selecciona un archivo primero.", "error");
+                        return;
+                    }
+
+                    const archivo = archivoInput.files[0];
+                    const nombre = archivo.name;
+                    mostrarMensaje(`Procesando y subiendo ${nombre}...`, "info");
+
+                    const reader = new FileReader();
+                    reader.onload = async function(evento) {
+                        const base64Crudo = evento.target.result.split(',')[1]; 
+
+                        const res = await fetch('/api/crear', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ nombreArchivo: nombre, contenidoBase64: base64Crudo })
+                        });
+                        const datos = await res.json();
+                        mostrarMensaje(datos.mensaje, datos.tipo);
+                    };
+                    reader.readAsDataURL(archivo);
                 } 
                 else if (tipo === 'recuperar') {
+                    const nombre = document.getElementById('nombreArchivo').value.trim();
+                    if (!nombre) {
+                        mostrarMensaje("Escribe el nombre del archivo a buscar.", "error");
+                        return;
+                    }
+
+                    mostrarMensaje(`Buscando ${nombre} en la red...`, "info");
                     const res = await fetch(`/api/recuperar?nombre=${nombre}`);
                     const datos = await res.json();
 
                     if (datos.tipo === 'exito') {
-                        mostrarMensaje("Archivo encontrado exitosamente.", "exito");
-                        document.getElementById('contenidoTexto').textContent = datos.contenido;
-                        document.getElementById('metaInfo').textContent = "Recuperado desde: " + datos.origen;
-                        divVisor.style.display = 'block';
+                        mostrarMensaje("¡Archivo encontrado! Iniciando descarga...", "exito");
+                        
+                        const byteCharacters = atob(datos.contenido);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                            byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        
+                        const blob = new Blob([byteArray]);
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        a.download = nombre;
+                        document.body.appendChild(a);
+                        a.click();
+                        
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+
+                        //document.getElementById('metaInfo').textContent = "Origen: " + datos.origen;
+                       // divVisor.style.display = 'block';
                     } else {
                         mostrarMensaje(datos.mensaje, "error");
                     }
                 }
             } catch (error) {
+                console.error(error);
                 mostrarMensaje("Error de conexión con el cliente local.", "error");
             }
         }

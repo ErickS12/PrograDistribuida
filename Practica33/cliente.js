@@ -44,12 +44,17 @@ const server = http.createServer(async (req, res) => {
     } 
     else if (req.method === 'POST' && urlParsed.pathname === '/api/crear') {
         let body = '';
+        // Nota: Aumentar memoria si se envían archivos muy grandes
         req.on('data', chunk => { body += chunk.toString(); });
         req.on('end', async () => {
-            const { nombreArchivo } = JSON.parse(body);
-            const resultado = await procesarCreacionArchivo(nombreArchivo);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(resultado));
+            try {
+                const { nombreArchivo, contenidoBase64 } = JSON.parse(body);
+                const resultado = await procesarCreacionArchivo(nombreArchivo, contenidoBase64);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(resultado));
+            } catch (err) {
+                res.writeHead(500); res.end(JSON.stringify({ tipo: 'error', mensaje: 'Error al procesar el archivo.' }));
+            }
         });
     } 
     else if (req.method === 'GET' && urlParsed.pathname === '/api/recuperar') {
@@ -78,7 +83,9 @@ async function procesarRecuperacionArchivo(nombre) {
     const rutaLocal = path.join(dirLocal, nombre);
     
     if (fs.existsSync(rutaLocal)) {
-        return { tipo: 'exito', contenido: fs.readFileSync(rutaLocal, 'utf8'), origen: 'Local (Cliente)' };
+        // Leemos el archivo y lo convertimos a Base64
+        const contenidoB64 = fs.readFileSync(rutaLocal).toString('base64');
+        return { tipo: 'exito', contenido: contenidoB64, origen: 'Local (Cliente)' };
     }
 
     if (nodosDisponibles.length === 0) return { tipo: 'error', mensaje: "No hay nodos en la red." };
@@ -95,7 +102,7 @@ async function procesarRecuperacionArchivo(nombre) {
     return { tipo: 'error', mensaje: "Archivo no encontrado en la red." };
 }
 
-async function procesarCreacionArchivo(nombre) {
+async function procesarCreacionArchivo(nombre, contenidoBase64) {
     if (nodosDisponibles.length === 0) return { tipo: 'error', mensaje: "Buscando nodos..." };
 
     const dirLocal = './archivos_cliente';
@@ -104,19 +111,21 @@ async function procesarCreacionArchivo(nombre) {
 
     if (fs.readdirSync(dirLocal).length < 3) {
         if (fs.existsSync(rutaCompleta)) return { tipo: 'info', mensaje: "Ya existe localmente." };
-        fs.writeFileSync(rutaCompleta, "Contenido web original");
+        // Escribimos el archivo decodificando el Base64
+        fs.writeFileSync(rutaCompleta, Buffer.from(contenidoBase64, 'base64'));
         return { tipo: 'exito', mensaje: "Creado localmente." };
     } else {
         const urlDestino = nodosDisponibles[indiceNodo % nodosDisponibles.length];
         indiceNodo++;
         try {
             const nodoRemoto = stubify(urlDestino, 'Nodo', ['guardarEnDisco']);
-            const res = await nodoRemoto.guardarEnDisco(nombre);
+            // Enviamos también el contenidoBase64
+            const res = await nodoRemoto.guardarEnDisco(nombre, contenidoBase64);
             if (res === 1) return { tipo: 'exito', mensaje: "Replicado en RED P2P." };
             return { tipo: 'error', mensaje: "Error en nodo." };
         } catch (e) {
             nodosDisponibles = nodosDisponibles.filter(n => n !== urlDestino);
-            return await procesarCreacionArchivo(nombre); 
+            return await procesarCreacionArchivo(nombre, contenidoBase64); 
         }
     }
 }
@@ -139,7 +148,6 @@ buscador.on('message', (msg, rinfo) => {
     }
 });
 
-// Manejo de error para que no se detenga el servidor si el puerto 10000 falla
 buscador.on('error', (err) => {
     console.log(`[ERROR P2P] Puerto 10000 ocupado o error de red: ${err.message}`);
 });
