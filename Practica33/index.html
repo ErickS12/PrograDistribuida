@@ -11,7 +11,7 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
         }
         .container {
@@ -20,34 +20,54 @@
             border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             text-align: center;
-            width: 400px;
+            width: 450px;
         }
-        h1 { color: #333; }
+        h1 { color: #333; margin-bottom: 10px; font-size: 24px; }
+        hr { border: 0; height: 1px; background: #ccc; margin: 20px 0; }
+        
         input[type="text"] {
-            width: 80%;
+            width: 85%;
             padding: 10px;
-            margin: 20px 0;
+            margin: 10px 0;
             border: 2px solid #ddd;
             border-radius: 6px;
             font-size: 16px;
         }
+        
+        .btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+        
         button {
-            background-color: #007bff;
-            color: white;
             border: none;
-            padding: 12px 24px;
-            font-size: 18px;
+            padding: 12px 20px;
+            font-size: 16px;
             border-radius: 6px;
             cursor: pointer;
-            transition: background-color 0.3s;
+            transition: opacity 0.3s;
+            color: white;
         }
-        button:hover { background-color: #0056b3; }
+        
+        .btn-crear { background-color: #007bff; }
+        .btn-recuperar { background-color: #28a745; }
+        button:hover { opacity: 0.8; }
+
         #resultado {
             margin-top: 20px;
             padding: 15px;
             border-radius: 6px;
             font-weight: bold;
+            word-break: break-all;
         }
+        
+        #visor {
+            margin-top: 15px;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: left;
+            border: 1px solid #bcbc7a;
+            display: none;
+        }
+
         .estado-info { background-color: #e7f3ff; color: #0056b3; }
         .estado-exito { background-color: #d4edda; color: #155724; }
         .estado-error { background-color: #f8d7da; color: #721c24; }
@@ -55,42 +75,64 @@
 </head>
 <body>
     <div class="container">
-        <h1>Crear Archivo</h1>
-        <p>El sistema decidirá automáticamente dónde guardarlo.</p>
-        <input type="text" id="nombreArchivo" placeholder="Ej: mi_documento.txt" autocomplete="off">
-        <br>
-        <button onclick="crearArchivo()">Crear</button>
+        <h1>Gestión de Archivos</h1>
+        <p style="font-size: 14px; color: #555;">El sistema replica y busca automáticamente en la red.</p>
+        
+        <input type="text" id="nombreArchivo" placeholder="Nombre del archivo (ej: datos.txt)" autocomplete="off">
+        
+        <div class="btn-group">
+            <button class="btn-crear" onclick="ejecutarAccion('crear')">Crear</button>
+            <button class="btn-recuperar" onclick="ejecutarAccion('recuperar')">Recuperar</button>
+        </div>
 
         <div id="resultado" style="display: none;"></div>
+        
+        <div id="visor">
+            <strong style="color: #333;">Contenido recuperado:</strong>
+            <pre id="contenidoTexto" style="white-space: pre-wrap; margin-top: 10px; color: #444;"></pre>
+            <small id="metaInfo" style="display: block; margin-top: 10px; color: #888; border-top: 1px solid #eee; padding-top: 5px;"></small>
+        </div>
     </div>
 
     <script>
-        async function crearArchivo() {
+        async function ejecutarAccion(tipo) {
             const inputNombre = document.getElementById('nombreArchivo');
-            const divResultado = document.getElementById('resultado');
             const nombre = inputNombre.value.trim();
+            const divVisor = document.getElementById('visor');
 
             if (!nombre) {
-                mostrarMensaje("Por favor escribe un nombre.", "error");
+                mostrarMensaje("Escribe un nombre de archivo.", "error");
                 return;
             }
 
-            mostrarMensaje("Procesando solicitud...", "info");
+            divVisor.style.display = 'none';
+            mostrarMensaje(`Procesando ${tipo}...`, "info");
 
             try {
-                // Pedimos a nuestro servidor local que haga el trabajo
-                const respuesta = await fetch('/api/crear', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ nombreArchivo: nombre })
-                });
-                const datos = await respuesta.json();
-                
-                mostrarMensaje(datos.mensaje, datos.tipo);
-                if(datos.tipo === 'exito') inputNombre.value = ''; // Limpiar campo si salió bien
+                if (tipo === 'crear') {
+                    const res = await fetch('/api/crear', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ nombreArchivo: nombre })
+                    });
+                    const datos = await res.json();
+                    mostrarMensaje(datos.mensaje, datos.tipo);
+                } 
+                else if (tipo === 'recuperar') {
+                    const res = await fetch(`/api/recuperar?nombre=${nombre}`);
+                    const datos = await res.json();
 
+                    if (datos.tipo === 'exito') {
+                        mostrarMensaje("Archivo encontrado exitosamente.", "exito");
+                        document.getElementById('contenidoTexto').textContent = datos.contenido;
+                        document.getElementById('metaInfo').textContent = "Recuperado desde: " + datos.origen;
+                        divVisor.style.display = 'block';
+                    } else {
+                        mostrarMensaje(datos.mensaje, "error");
+                    }
+                }
             } catch (error) {
-                mostrarMensaje("Error de comunicación con el cliente local.", "error");
+                mostrarMensaje("Error de conexión con el cliente local.", "error");
             }
         }
 
