@@ -23,6 +23,7 @@ function getIP() {
 const miIp = getIP();
 const miUrl = `http://${miIp}:${PUERTO}`;
 let otrosNodos = [];
+const REPLICA_FACTOR = 3; // 1/3 de los nodos se convertirán en réplicas (escalable)
 
 console.log(`[SISTEMA] Iniciando nodo en ${miUrl}`);
 
@@ -83,32 +84,124 @@ function guardarLocal(nombre, contenidoBase64) {
 }
 
 // ==========================
+// FUNCIÓN AUXILIAR: Contar archivos y calcular réplicas dinámicas
+// ==========================
+async function contarArchivosEnNodos() {
+    let nodosConCuentas = [];
+    
+    // Contar archivos locales
+    const dirLocal = './archivos_nodo_' + PUERTO;
+    const countLocal = fs.existsSync(dirLocal) ? fs.readdirSync(dirLocal).length : 0;
+    nodosConCuentas.push({ url: 'local', archivos: countLocal });
+    
+    // Contar archivos en otros nodos
+    for (const url of otrosNodos) {
+        try {
+            const nodo = stubify(url, 'Nodo', ['contarArchivos']);
+            const count = await nodo.contarArchivos();
+            nodosConCuentas.push({ url, archivos: count });
+        } catch (err) {
+            console.error(`[ERROR] No se pudo contar archivos en ${url}`);
+        }
+    }
+    
+    // Ordenar por cantidad de archivos (menor primero)
+    nodosConCuentas.sort((a, b) => a.archivos - b.archivos);
+    return nodosConCuentas;
+}
+
+function calcularReplicasDinamicas(totalNodos) {
+    // Calcula dinámicamente el número de réplicas basado en el total de nodos
+    // 6 nodos → 2 réplicas, 120 nodos → 40 réplicas, etc.
+    const replicas = Math.max(2, Math.floor(totalNodos / REPLICA_FACTOR));
+    return Math.min(replicas, totalNodos - 1); // No puede ser más que (totalNodos - 1)
+}
+
+// ==========================
 // LÓGICA DISTRIBUIDA (RPC)
 // ==========================
 const nodoLogica = {
     guardarEnDisco: async (nombre, contenidoBase64) => {
         console.log(`[COORDINADOR] Recibida solicitud para: ${nombre}`);
         
-        const resultado = guardarLocal(nombre, contenidoBase64);
-        if (resultado === 2) return 2; 
-
-        let replicasExitosas = 1; 
-
-        for (const url of otrosNodos) {
+        // Obtener conteo de archivos en todos los nodos
+        const nodosConCuentas = await contarArchivosEnNodos();
+        const nodoDestino = nodosConCuentas[0];
+        const maxReplicas = calcularReplicasDinamicas(nodosConCuentas.length);
+        
+        console.log(`[DISTRIBUCION] Nodo destino: ${nodoDestino.url} (tiene ${nodoDestino.archivos} archivos)`);
+        console.log(`[REPLICACION] Creando ${maxReplicas} réplica(s) de ${maxReplicas > 1 ? 'un total de' : ''} ${nodosConCuentas.length} nodo(s)`);
+        
+        if (nodoDestino.url === 'local') {
+            // Guardar en este nodo (es el que tiene menos archivos)
+            const resultado = guardarLocal(nombre, contenidoBase64);
+            if (resultado === 2) return 2;
+            
+            // Replicar en los siguientes maxReplicas nodos con menos archivos
+            let replicasExitosas = 1;
+            for (let i = 1; i <= maxReplicas && i < nodosConCuentas.length; i++) {
+                const { url } = nodosConCuentas[i];
+                try {
+                    const nodo = stubify(url, 'Nodo', ['guardarReplica']);
+                    const res = await nodo.guardarReplica(nombre, contenidoBase64);
+                    if (res === 1 || res === 2) {
+                        replicasExitosas++;
+                        console.log(`[REPLICA] Copia creada en ${url}`);
+                    }
+                } catch (err) {
+                    console.error(`[FALLO] No se pudo replicar en ${url}`);
+                }
+            }
+            
+            console.log(`[SISTEMA] Archivo '${nombre}' distribuido: 1 original + ${replicasExitosas - 1} réplica(s).`);
+            return 1;
+        } else {
+            // El archivo debe guardarse en otro nodo
             try {
-                const nodoReplica = stubify(url, 'Nodo', ['guardarReplica']);
-                const res = await nodoReplica.guardarReplica(nombre, contenidoBase64);
+                // Preparar lista de nodos para replicación
+                const nodosParaReplica = nodosConCuentas
+                    .filter(n => n.url !== nodoDestino.url)
+                    .slice(0, maxReplicas)
+                    .map(n => n.url);
+                
+                const nodo = stubify(nodoDestino.url, 'Nodo', ['guardarEnDiscoDistribuido']);
+                return await nodo.guardarEnDiscoDistribuido(nombre, contenidoBase64, nodosParaReplica);
+            } catch (err) {
+                console.error(`[FALLO] No se pudo guardar en ${nodoDestino.url}`);
+                return 0;
+            }
+        }
+    },
+
+    guardarEnDiscoDistribuido: async (nombre, contenidoBase64, nodosParaReplica = []) => {
+        // Guardar en el nodo actual
+        const resultado = guardarLocal(nombre, contenidoBase64);
+        if (resultado === 2) return 2;
+        
+        let replicasExitosas = 1;
+        
+        // Replicar en los nodos especificados
+        for (const url of nodosParaReplica) {
+            try {
+                const nodo = stubify(url, 'Nodo', ['guardarReplica']);
+                const res = await nodo.guardarReplica(nombre, contenidoBase64);
                 if (res === 1 || res === 2) {
                     replicasExitosas++;
-                    console.log(`[REPLICA] Copia creada con éxito en ${url}`);
+                    console.log(`[REPLICA] Copia creada en ${url}`);
                 }
             } catch (err) {
                 console.error(`[FALLO] No se pudo replicar en ${url}`);
             }
         }
-
-        console.log(`[SISTEMA] Archivo '${nombre}' protegido con ${replicasExitosas} copias.`);
+        
+        console.log(`[SISTEMA] Archivo '${nombre}' distribuido: 1 original + ${replicasExitosas - 1} réplica(s).`);
         return 1;
+    },
+
+    contarArchivos: async () => {
+        const dir = './archivos_nodo_' + PUERTO;
+        if (!fs.existsSync(dir)) return 0;
+        return fs.readdirSync(dir).length;
     },
 
     guardarReplica: async (nombre, contenidoBase64) => {
