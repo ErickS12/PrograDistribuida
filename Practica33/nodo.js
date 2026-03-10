@@ -232,8 +232,59 @@ const nodoLogica = {
         const dir = './archivos_nodo_' + PUERTO;
         const ruta = `${dir}/${nombre}`;
         return fs.existsSync(ruta) ? fs.readFileSync(ruta).toString('base64') : null;
+    },
+
+    listarArchivos: async () => {
+        const dir = './archivos_nodo_' + PUERTO;
+        if (!fs.existsSync(dir)) return [];
+        return fs.readdirSync(dir);
     }
 };
+
+// ==========================
+// RECUPERACIÓN Y SINCRONIZACIÓN INICIAL
+// ==========================
+async function sincronizarArchivosInicial() {
+    // Esperar un breve periodo para descubrir otros nodos en la red
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    if (otrosNodos.length === 0) {
+        console.log('[RECUPERACIÓN] No se encontraron otros nodos para sincronizar.');
+        return;
+    }
+
+    const dirLocal = './archivos_nodo_' + PUERTO;
+    if (!fs.existsSync(dirLocal)) fs.mkdirSync(dirLocal);
+
+    const localFiles = new Set(fs.existsSync(dirLocal) ? fs.readdirSync(dirLocal) : []);
+
+    for (const url of otrosNodos) {
+        try {
+            const nodoRemoto = stubify(url, 'Nodo', ['listarArchivos', 'leerArchivoLocal']);
+            const archivosRemotos = await nodoRemoto.listarArchivos();
+
+            for (const nombre of archivosRemotos) {
+                if (localFiles.has(nombre)) continue;
+
+                const contenidoBase64 = await nodoRemoto.leerArchivoLocal(nombre);
+                if (!contenidoBase64) continue;
+
+                const res = guardarLocal(nombre, contenidoBase64);
+                if (res === 1) {
+                    localFiles.add(nombre);
+                    console.log(`[RECUPERACIÓN] Archivo '${nombre}' recuperado desde ${url}.`);
+                }
+            }
+        } catch (err) {
+            console.log(`[RECUPERACIÓN] Error conectando con ${url}: ${err.message}`);
+        }
+    }
+
+    console.log(`[RECUPERACIÓN] Sincronización inicial completada. Archivos locales: ${localFiles.size}`);
+}
+
+// Ejecutar sincronización inicial después de iniciar RPC
+sincronizarArchivosInicial();
 
 // ==========================
 // SERVIDOR RPC
