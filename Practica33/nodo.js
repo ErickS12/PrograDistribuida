@@ -23,7 +23,7 @@ function getIP() {
 const miIp = getIP();
 const miUrl = `http://${miIp}:${PUERTO}`;
 let otrosNodos = [];
-const REPLICA_FACTOR = 3; // 1/3 de los nodos se convertirán en réplicas (escalable)
+const REPLICA_FACTOR = 2; // 1/2 de los nodos se convertirán en réplicas (escalable)
 
 console.log(`[SISTEMA] Iniciando nodo en ${miUrl}`);
 
@@ -71,7 +71,7 @@ p2p.bind(PUERTO_P2P, () => {
 // LÓGICA DE PERSISTENCIA
 // ==========================
 function guardarLocal(nombre, contenidoBase64) {
-    const dir = './archivos_nodo_' + PUERTO; 
+    const dir = './archivos_Local_' + PUERTO; 
     if (!fs.existsSync(dir)) fs.mkdirSync(dir);
 
     const ruta = `${dir}/${nombre}`;
@@ -90,7 +90,7 @@ async function contarArchivosEnNodos() {
     let nodosConCuentas = [];
     
     // Contar archivos locales
-    const dirLocal = './archivos_nodo_' + PUERTO;
+    const dirLocal = './archivos_Local_' + PUERTO;
     const countLocal = fs.existsSync(dirLocal) ? fs.readdirSync(dirLocal).length : 0;
     nodosConCuentas.push({ url: 'local', archivos: countLocal });
     
@@ -199,7 +199,7 @@ const nodoLogica = {
     },
 
     contarArchivos: async () => {
-        const dir = './archivos_nodo_' + PUERTO;
+        const dir = './archivos_Local_' + PUERTO;
         if (!fs.existsSync(dir)) return 0;
         return fs.readdirSync(dir).length;
     },
@@ -209,7 +209,7 @@ const nodoLogica = {
     },
 
     leerArchivo: async (nombre) => {
-        const dir = './archivos_nodo_' + PUERTO;
+        const dir = './archivos_Local_' + PUERTO;
         const ruta = `${dir}/${nombre}`;
 
         if (fs.existsSync(ruta)) {
@@ -229,13 +229,13 @@ const nodoLogica = {
     },
 
     leerArchivoLocal: async (nombre) => {
-        const dir = './archivos_nodo_' + PUERTO;
+        const dir = './archivos_Local_' + PUERTO;
         const ruta = `${dir}/${nombre}`;
         return fs.existsSync(ruta) ? fs.readFileSync(ruta).toString('base64') : null;
     },
 
     listarArchivos: async () => {
-        const dir = './archivos_nodo_' + PUERTO;
+        const dir = './archivos_Local_' + PUERTO;
         if (!fs.existsSync(dir)) return [];
         return fs.readdirSync(dir);
     }
@@ -248,13 +248,31 @@ async function sincronizarArchivosInicial() {
     // Esperar un breve periodo para descubrir otros nodos en la red
     await new Promise(resolve => setTimeout(resolve, 5000));
 
+    const dirLocal = './archivos_Local_' + PUERTO;
+    if (!fs.existsSync(dirLocal)) fs.mkdirSync(dirLocal);
+
+    // ✨ NUEVO: Replicar archivos locales existentes en otros nodos
+    const archivosLocales = fs.readdirSync(dirLocal) || [];
+    if (archivosLocales.length > 0 && otrosNodos.length > 0) {
+        console.log(`[REPLICACIÓN] Encontrados ${archivosLocales.length} archivo(s) local(es). Iniciando replicación...`);
+        for (const archivo of archivosLocales) {
+            try {
+                const ruta = `${dirLocal}/${archivo}`;
+                if (fs.statSync(ruta).isFile()) {
+                    const contenidoBase64 = fs.readFileSync(ruta).toString('base64');
+                    await nodoLogica.guardarEnDisco(archivo, contenidoBase64);
+                }
+            } catch (err) {
+                console.error(`[ERROR] No se pudo replicar '${archivo}':`, err.message);
+            }
+        }
+        console.log(`[REPLICACIÓN] Replicación de archivos locales completada.`);
+    }
+
     if (otrosNodos.length === 0) {
         console.log('[RECUPERACIÓN] No se encontraron otros nodos para sincronizar.');
         return;
     }
-
-    const dirLocal = './archivos_nodo_' + PUERTO;
-    if (!fs.existsSync(dirLocal)) fs.mkdirSync(dirLocal);
 
     const localFiles = new Set(fs.existsSync(dirLocal) ? fs.readdirSync(dirLocal) : []);
 
