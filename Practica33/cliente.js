@@ -125,7 +125,7 @@ async function procesarCreacionArchivo(nombre, contenidoBase64) {
             return { tipo: 'error', mensaje: "Error en nodo." };
         } catch (e) {
             nodosDisponibles = nodosDisponibles.filter(n => n !== urlDestino);
-            return await procesarCreacionArchivo(nombre, contenidoBase64); 
+            return await procesarCregitacionArchivo(nombre, contenidoBase64); 
         }
     }
 }
