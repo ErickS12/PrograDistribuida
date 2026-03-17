@@ -70,16 +70,19 @@ p2p.bind(PUERTO_P2P, () => {
 // ==========================
 // LÓGICA DE PERSISTENCIA
 // ==========================
-function guardarLocal(nombre, contenidoBase64) {
-    const dir = './archivos_Local_' + PUERTO; 
+// ==========================
+// LÓGICA DE PERSISTENCIA (Reemplazar)
+// ==========================
+function guardarLocal(nombre, contenidoBase64, esReplica = false) {
+    // Nombres descriptivos para identificar fácilmente el rol del archivo
+    const dir = esReplica ? `./nodo_${PUERTO}_replicas` : `./nodo_${PUERTO}_principal`;
     if (!fs.existsSync(dir)) fs.mkdirSync(dir);
 
     const ruta = `${dir}/${nombre}`;
-    if (fs.existsSync(ruta)) return 2; 
+    if (fs.existsSync(ruta)) return 2; // El archivo ya existe
 
-    // Convertimos de Base64 a binario antes de guardar en disco
     fs.writeFileSync(ruta, Buffer.from(contenidoBase64, 'base64'));
-    console.log(`[DISCO] Guardado: ${nombre}`);
+    console.log(`[DISCO] Guardado como ${esReplica ? 'RÉPLICA' : 'PRINCIPAL'}: ${nombre}`);
     return 1;
 }
 
@@ -198,26 +201,38 @@ const nodoLogica = {
         return 1;
     },
 
-    contarArchivos: async () => {
-        const dir = './archivos_Local_' + PUERTO;
-        if (!fs.existsSync(dir)) return 0;
-        return fs.readdirSync(dir).length;
+contarArchivos: async () => {
+        const dirs = [`./nodo_${PUERTO}_principal`, `./nodo_${PUERTO}_replicas`];
+        let total = 0;
+        dirs.forEach(dir => {
+            if (fs.existsSync(dir)) total += fs.readdirSync(dir).length;
+        });
+        return total;
     },
 
     guardarReplica: async (nombre, contenidoBase64) => {
-        return guardarLocal(nombre, contenidoBase64);
+        // Al pasar 'true', forzamos a que se guarde en la carpeta de réplicas
+        return guardarLocal(nombre, contenidoBase64, true);
+    },
+
+    leerArchivoLocal: async (nombre) => {
+        const dirs = [`./nodo_${PUERTO}_principal`, `./nodo_${PUERTO}_replicas`];
+        for (const dir of dirs) {
+            const ruta = `${dir}/${nombre}`;
+            if (fs.existsSync(ruta)) return fs.readFileSync(ruta).toString('base64');
+        }
+        return null;
     },
 
     leerArchivo: async (nombre) => {
-        const dir = './archivos_Local_' + PUERTO;
-        const ruta = `${dir}/${nombre}`;
-
-        if (fs.existsSync(ruta)) {
+        // Buscar localmente en ambas carpetas descriptivas primero
+        const contenidoLocal = await nodoLogica.leerArchivoLocal(nombre);
+        if (contenidoLocal) {
             console.log(`[LECTURA] Sirviendo copia local de ${nombre}`);
-            // Retornamos el archivo convertido a Base64
-            return fs.readFileSync(ruta).toString('base64');
+            return contenidoLocal;
         }
 
+        // Si no está, buscar en la red
         for (const url of otrosNodos) {
             try {
                 const nodoRemoto = stubify(url, 'Nodo', ['leerArchivoLocal']);
@@ -228,18 +243,17 @@ const nodoLogica = {
         return null;
     },
 
-    leerArchivoLocal: async (nombre) => {
-        const dir = './archivos_Local_' + PUERTO;
-        const ruta = `${dir}/${nombre}`;
-        return fs.existsSync(ruta) ? fs.readFileSync(ruta).toString('base64') : null;
-    },
-
     listarArchivos: async () => {
-        const dir = './archivos_Local_' + PUERTO;
-        if (!fs.existsSync(dir)) return [];
-        return fs.readdirSync(dir);
+        const dirs = [`./nodo_${PUERTO}_principal`, `./nodo_${PUERTO}_replicas`];
+        let archivos = new Set();
+        dirs.forEach(dir => {
+            if (fs.existsSync(dir)) {
+                fs.readdirSync(dir).forEach(file => archivos.add(file));
+            }
+        });
+        return Array.from(archivos);
     }
-};
+}
 
 // ==========================
 // RECUPERACIÓN Y SINCRONIZACIÓN INICIAL
@@ -248,7 +262,9 @@ async function sincronizarArchivosInicial() {
     // Esperar un breve periodo para descubrir otros nodos en la red
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    const dirLocal = './archivos_Local_' + PUERTO;
+
+// Cambia la variable dirLocal a:
+const dirLocal = `./nodo_${PUERTO}_principal`;
     if (!fs.existsSync(dirLocal)) fs.mkdirSync(dirLocal);
 
     // ✨ NUEVO: Replicar archivos locales existentes en otros nodos

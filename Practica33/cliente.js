@@ -101,60 +101,67 @@ async function procesarRecuperacionArchivo(nombre) {
     }
     return { tipo: 'error', mensaje: "Archivo no encontrado en la red." };
 }
-
+// ==========================
+// LÓGICA DE ARCHIVOS (Reemplazar)
+// ==========================
 async function procesarCreacionArchivo(nombre, contenidoBase64) {
-    if (nodosDisponibles.length === 0) return { tipo: 'error', mensaje: "Buscando nodos..." };
+    if (nodosDisponibles.length === 0) return { tipo: 'error', mensaje: "Buscando nodos en la red... Intenta de nuevo en unos segundos." };
 
-    const dirLocal = './archivos_cliente';
+    // Carpeta con nombre descriptivo para los archivos que sube o descarga el cliente
+    const dirLocal = './archivos_cliente_web';
     if (!fs.existsSync(dirLocal)) fs.mkdirSync(dirLocal);
     const rutaCompleta = `${dirLocal}/${nombre}`;
 
-    if (fs.readdirSync(dirLocal).length < 3) {
-        if (fs.existsSync(rutaCompleta)) return { tipo: 'info', mensaje: "Ya existe localmente." };
-        // Escribimos el archivo decodificando el Base64
+    // Guardamos una copia local como caché para el cliente web
+    if (!fs.existsSync(rutaCompleta)) {
         fs.writeFileSync(rutaCompleta, Buffer.from(contenidoBase64, 'base64'));
-        return { tipo: 'exito', mensaje: "Creado localmente." };
-    } else {
-        const urlDestino = nodosDisponibles[indiceNodo % nodosDisponibles.length];
-        indiceNodo++;
-        try {
-            const nodoRemoto = stubify(urlDestino, 'Nodo', ['guardarEnDisco']);
-            // Enviamos también el contenidoBase64
-            const res = await nodoRemoto.guardarEnDisco(nombre, contenidoBase64);
-            if (res === 1) return { tipo: 'exito', mensaje: "Replicado en RED P2P." };
-            return { tipo: 'error', mensaje: "Error en nodo." };
-        } catch (e) {
-            nodosDisponibles = nodosDisponibles.filter(n => n !== urlDestino);
-            return await procesarCreacionArchivo(nombre, contenidoBase64); 
+    }
+
+    // SIEMPRE enviamos a la red P2P para asegurar la distribución y réplica
+    const urlDestino = nodosDisponibles[indiceNodo % nodosDisponibles.length];
+    indiceNodo++;
+
+    try {
+        const nodoRemoto = stubify(urlDestino, 'Nodo', ['guardarEnDisco']);
+        const res = await nodoRemoto.guardarEnDisco(nombre, contenidoBase64);
+        if (res === 1 || res === 2) {
+            return { tipo: 'exito', mensaje: "Archivo guardado localmente y distribuido en la red P2P." };
         }
+        return { tipo: 'error', mensaje: "Error al guardar en el nodo de la red." };
+    } catch (e) {
+        console.log(`[WEB] Nodo falló: ${urlDestino}. Intentando con otro...`);
+        nodosDisponibles = nodosDisponibles.filter(n => n !== urlDestino);
+        return await procesarCreacionArchivo(nombre, contenidoBase64); // Reintento recursivo
     }
 }
 
 // ==========================
-// DESCUBRIMIENTO P2P
+// DESCUBRIMIENTO P2P (Reemplazar)
 // ==========================
 const buscador = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 
 buscador.on('message', (msg, rinfo) => {
     const mensaje = msg.toString();
-    if (mensaje.startsWith("NODO_VIVO") || mensaje.startsWith("NODO_DISPONIBLE")) {
-        const puertoNodo = mensaje.split(":")[1] || "8081";
-        const urlNodo = `http://${rinfo.address}:${puertoNodo}`;
-        
+    
+    // Ahora escuchamos correctamente el broadcast que emite nodo.js
+    if (mensaje.startsWith("NODO_VIVO")) {
+        const puertoRemoto = mensaje.split(":")[1];
+        const urlNodo = `http://${rinfo.address}:${puertoRemoto}`;
+
         if (!nodosDisponibles.includes(urlNodo)) {
             nodosDisponibles.push(urlNodo);
-            console.log(`[CLIENTE WEB] Nodo descubierto: ${urlNodo}`);
+            console.log(`[CLIENTE WEB] ¡Nodo detectado en red P2P! -> ${urlNodo}`);
         }
     }
 });
 
 buscador.on('error', (err) => {
-    console.log(`[ERROR P2P] Puerto 10000 ocupado o error de red: ${err.message}`);
+    console.log(`[ERROR P2P] Puerto ocupado o error de red: ${err.message}`);
 });
 
 buscador.bind(PUERTO_P2P, () => {
     buscador.setBroadcast(true);
-    console.log(`[P2P] Buscando nodos activamente...`);
+    console.log(`[P2P] Buscando nodos activamente en el puerto ${PUERTO_P2P}...`);
     
     setInterval(() => {
         buscador.send(Buffer.from("BUSCANDO_NODOS"), PUERTO_P2P, '255.255.255.255');
