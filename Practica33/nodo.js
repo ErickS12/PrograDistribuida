@@ -135,10 +135,11 @@ const nodoLogica = {
         if (nodoDestino.url === 'local') {
             // Guardar en este nodo (es el que tiene menos archivos)
             const resultado = guardarLocal(nombre, contenidoBase64);
-            if (resultado === 2) return 2;
+            if (resultado === 0) return 0; // Error al guardar
             
             // Replicar en los siguientes maxReplicas nodos con menos archivos
-            let replicasExitosas = 1;
+            // resultado=1 (nuevo), resultado=2 (ya existe pero igual replicamos)
+            let replicasExitosas = resultado === 1 ? 1 : 0;
             for (let i = 1; i <= maxReplicas && i < nodosConCuentas.length; i++) {
                 const { url } = nodosConCuentas[i];
                 try {
@@ -153,7 +154,7 @@ const nodoLogica = {
                 }
             }
             
-            console.log(`[SISTEMA] Archivo '${nombre}' distribuido: 1 original + ${replicasExitosas - 1} réplica(s).`);
+            console.log(`[SISTEMA] Archivo '${nombre}' distribuido: 1 original + ${replicasExitosas} réplica(s).`);
             return 1;
         } else {
             // El archivo debe guardarse en otro nodo
